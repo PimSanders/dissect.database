@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import itertools
 import re
-import struct
-from functools import cached_property, lru_cache
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
@@ -16,6 +15,7 @@ from dissect.database.sqlite3.exception import (
     NoCellData,
 )
 from dissect.database.sqlite3.util import parse_table_columns_constraints
+from dissect.database.sqlite3.wal import WAL, Checkpoint
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -50,17 +50,13 @@ SERIAL_TYPES = {
 
 SQLITE3_HEADER_MAGIC = b"SQLite format 3\x00"
 
-WAL_HEADER_MAGIC_LE = 0x377F0682
-WAL_HEADER_MAGIC_BE = 0x377F0683
-WAL_HEADER_MAGIC = {WAL_HEADER_MAGIC_LE, WAL_HEADER_MAGIC_BE}
-
 
 class SQLite3:
     def __init__(
         self,
         fh: Path | BinaryIO,
         wal_fh: Path | BinaryIO | None = None,
-        wal_checkpoint: WALCheckpoint | int | None = None,
+        wal_checkpoint: Checkpoint | int | None = None,
     ):
         # Use the provided file handle or try to open the file path.
         if hasattr(fh, "read"):
@@ -555,166 +551,6 @@ class Cell:
             self._read_record()
 
         return self._values
-
-
-class WAL:
-    def __init__(self, fh: BinaryIO):
-        self.fh = fh
-        self.header = c_sqlite3.wal_header(fh)
-
-        if self.header.magic not in WAL_HEADER_MAGIC:
-            raise InvalidDatabase("Invalid header magic")
-
-        self.checksum_endian = "<" if self.header.magic == WAL_HEADER_MAGIC_LE else ">"
-        self._checkpoints = None
-
-        self.frame = lru_cache(1024)(self.frame)
-
-    def frame(self, frame_idx: int) -> WALFrame:
-        frame_size = len(c_sqlite3.wal_frame) + self.header.page_size
-        offset = len(c_sqlite3.wal_header) + frame_idx * frame_size
-        return WALFrame(self, offset)
-
-    def frames(self) -> Iterator[WALFrame]:
-        frame_idx = 0
-        while True:
-            try:
-                yield self.frame(frame_idx)
-                frame_idx += 1
-            except EOFError:  # noqa: PERF203
-                break
-
-    @cached_property
-    def commits(self) -> list[WALCommit]:
-        """Collects all commits in the WAL file.
-
-        For commit records ``header.page_count`` specifies the size of the
-        database file in pages after the commit. For all other records it is 0.
-
-        References:
-            - https://sqlite.org/fileformat2.html#wal_file_format
-        """
-        commits = []
-        frames = []
-
-        for frame in self.frames():
-            frames.append(frame)
-
-            # A commit record has a page_count header greater than zero
-            if frame.page_count > 0:
-                commits.append(WALCommit(self, frames))
-                frames = []
-
-        return commits
-
-    @cached_property
-    def checkpoints(self) -> list[WALCommit]:
-        """Return deduplicated WAL commits (checkpoints), newest first.
-
-        Deduplicate commits by the salt1 value of their first frame. Later
-        commits overwrite earlier ones so the returned list contains the most
-        recent commit for each salt1, sorted descending.
-
-        References:
-            - https://sqlite.org/fileformat2.html#wal_file_format
-            - https://sqlite.org/wal.html#checkpointing
-        """
-        checkpoints_map: dict[int, WALCommit] = {}
-        for commit in self.commits:
-            if not commit.frames:
-                continue
-            salt1 = commit.frames[0].header.salt1
-            # Keep the most recent commit for each salt1 (later commits overwrite).
-            checkpoints_map[salt1] = commit
-
-        return sorted(
-            checkpoints_map.values(),
-            key=lambda c: c.frames[0].header.salt1,
-            #TODO Should this be reverse? Reverse means: cp0 is the latest, cpN the oldest
-            reverse=True,
-        )
-
-
-class WALFrame:
-    def __init__(self, wal: WAL, offset: int):
-        self.wal = wal
-        self.offset = offset
-
-        self.fh = wal.fh
-        self._data = None
-
-        self.fh.seek(offset)
-        self.header = c_sqlite3.wal_frame(self.fh)
-
-    def __repr__(self) -> str:
-        return f"<WALFrame page_number={self.page_number} page_count={self.page_count}>"
-
-    @property
-    def valid(self) -> bool:
-        salt1_match = self.header.salt1 == self.wal.header.salt1
-        salt2_match = self.header.salt2 == self.wal.header.salt2
-
-        return salt1_match and salt2_match
-
-    @property
-    def data(self) -> bytes:
-        if not self._data:
-            self.fh.seek(self.offset + len(c_sqlite3.wal_frame))
-            self._data = self.fh.read(self.wal.header.page_size)
-        return self._data
-
-    @property
-    def page_number(self) -> int:
-        return self.header.page_number
-
-    @property
-    def page_count(self) -> int:
-        return self.header.page_count
-
-
-# Collection of frames that were committed together
-class _WALFramesCollection:
-    def __init__(self, wal: WAL, frames: list[WALFrame]):
-        self.wal = wal
-        self.frames = frames
-
-    def __contains__(self, page: int) -> bool:
-        return page in self.page_map
-
-    def __getitem__(self, page: int) -> WALFrame:
-        return self.page_map[page]
-
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} frames={len(self.frames)}>"
-
-    @cached_property
-    def page_map(self) -> dict[int, WALFrame]:
-        return {frame.page_number: frame for frame in self.frames}
-
-    def get(self, page: int, default: Any = None) -> WALFrame:
-        return self.page_map.get(page, default)
-
-
-class WALCheckpoint(_WALFramesCollection):
-    pass
-
-
-class WALCommit(_WALFramesCollection):
-    pass
-
-
-def wal_checksum(buf: bytes, endian: str = ">") -> tuple[int, int]:
-    """For future use, will be used when WAL is fully implemented"""
-
-    s0 = s1 = 0
-    num_ints = len(buf) // 4
-    arr = struct.unpack(f"{endian}{num_ints}I", buf)
-
-    for int_num in range(0, num_ints, 2):
-        s0 = (s0 + (arr[int_num] + s1)) & 0xFFFFFFFF
-        s1 = (s1 + (arr[int_num + 1] + s0)) & 0xFFFFFFFF
-
-    return s0, s1
 
 
 def walk_tree(sqlite: SQLite3, page: Page) -> Iterator[Cell]:
