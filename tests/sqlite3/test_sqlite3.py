@@ -50,7 +50,7 @@ def test_sqlite_wal(sqlite_db: BinaryIO, sqlite_wal: BinaryIO) -> None:
     # After the first checkpoint the "after checkpoint" entries are present
     s = sqlite3.SQLite3(sqlite_db, sqlite_wal, wal_checkpoint=2)
 
-    table = list(s.tables())[0]
+    table = next(iter(s.tables()))
 
     rows = list(table.rows())
     assert len(rows) == 9
@@ -89,7 +89,7 @@ def test_sqlite_wal(sqlite_db: BinaryIO, sqlite_wal: BinaryIO) -> None:
     # After the second checkpoint two more entries are present ("second checkpoint")
     s = sqlite3.SQLite3(sqlite_db, sqlite_wal, wal_checkpoint=1)
 
-    table = list(s.tables())[0]
+    table = next(iter(s.tables()))
 
     rows = list(table.rows())
     assert len(rows) == 11
@@ -134,7 +134,7 @@ def test_sqlite_wal(sqlite_db: BinaryIO, sqlite_wal: BinaryIO) -> None:
     # After the third checkpoint the deletion and update of one "after checkpoint" are reflected
     s = sqlite3.SQLite3(sqlite_db, sqlite_wal, wal_checkpoint=0)
 
-    table = list(s.tables())[0]
+    table = next(iter(s.tables()))
     rows = list(table.rows())
 
     assert len(rows) == 10

@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, BinaryIO
+from typing import BinaryIO
 
 import pytest
 
 from tests._util import absolute_path
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
 
 
 @pytest.fixture
