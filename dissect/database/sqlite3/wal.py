@@ -123,8 +123,22 @@ class Frame:
 
     @property
     def valid(self) -> bool:
+        """Check if the frame is valid by comparing its salt values and verifying the checksum.
+
+        A frame is valid if:
+            - Its salt1 and salt2 values match those in the WAL header.
+            - Its checksum matches the calculated checksum.
+
+        References:
+            - https://sqlite.org/fileformat2.html#wal_file_format
+        """
         salt1_match = self.header.salt1 == self.wal.header.salt1
         salt2_match = self.header.salt2 == self.wal.header.salt2
+
+        # print(f"Final 8 bytes of frame-header: {self.header.checksum1}, {self.header.checksum2}")
+        # print(f"First 24 bytes of WAL header:")
+
+        # print("*"*20)
 
         return salt1_match and salt2_match
 
@@ -185,6 +199,11 @@ class Commit(_FrameCollection):
 
 
 def checksum(buf: bytes, endian: str = ">") -> tuple[int, int]:
+    """Calculate the checksum of a WAL header or frame.
+
+    References:
+        - https://sqlite.org/fileformat2.html#checksum_algorithm
+    """
 
     s0 = s1 = 0
     num_ints = len(buf) // 4
