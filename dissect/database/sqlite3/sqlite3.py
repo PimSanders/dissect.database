@@ -71,6 +71,7 @@ class SQLite3:
     References:
         - https://sqlite.org/fileformat2.html
     """
+
     def __init__(
         self,
         fh: Path | BinaryIO,
@@ -178,14 +179,12 @@ class SQLite3:
         if num == 1:  # Page 1 is root
             self.fh.seek(len(c_sqlite3.header))
             return self.fh.read(self.header.page_size)
-        else:
-            self.fh.seek((num - 1) * self.page_size)
+        self.fh.seek((num - 1) * self.page_size)
 
         # If a specific WAL checkpoint was provided, use it instead of the on-disk page.
-        if self.wal and self.checkpoint is not None:
-            if num in self.checkpoint:
-                frame = self.checkpoint.get(num)
-                return frame.data
+        if self.wal and self.checkpoint is not None and num in self.checkpoint:
+            frame = self.checkpoint.get(num)
+            return frame.data
 
         # Check if the latest valid instance of the page is committed (either the frame itself
         # is the commit frame or it is included in a commit's frames). If so, return that frame's data.

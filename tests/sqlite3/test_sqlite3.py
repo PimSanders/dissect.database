@@ -1,20 +1,25 @@
 from __future__ import annotations
 
 from io import BytesIO
-from pathlib import Path
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 import pytest
 
 from dissect.database.sqlite3 import sqlite3
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
 def test_sqlite_binaryio(sqlite_db: Path) -> None:
     s = sqlite3.SQLite3(sqlite_db.open("rb"))
     _sqlite_read_data(s)
 
+
 def test_sqlite_path(sqlite_db: Path) -> None:
     s = sqlite3.SQLite3(sqlite_db)
     _sqlite_read_data(s)
+
 
 def _sqlite_read_data(db: sqlite3.SQLite3) -> None:
     assert db.header.magic == sqlite3.SQLITE3_HEADER_MAGIC
