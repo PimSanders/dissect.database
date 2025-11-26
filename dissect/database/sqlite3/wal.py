@@ -78,6 +78,8 @@ class WAL:
                 commits.append(Commit(self, frames))
                 frames = []
 
+                # TODO There might be data stored in later frames after the commit?
+
         return commits
 
     @cached_property
@@ -186,7 +188,6 @@ class Checkpoint(_FrameCollection):
     References:
         - https://sqlite.org/fileformat2.html#wal_file_format
     """
-    pass
 
 
 class Commit(_FrameCollection):
@@ -195,7 +196,6 @@ class Commit(_FrameCollection):
     References:
         - https://sqlite.org/fileformat2.html#wal_file_format
     """
-    pass
 
 
 def checksum(buf: bytes, endian: str = ">") -> tuple[int, int]:
