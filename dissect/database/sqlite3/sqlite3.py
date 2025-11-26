@@ -55,8 +55,10 @@ SQLITE3_HEADER_MAGIC = b"SQLite format 3\x00"
 class SQLite3:
     """SQLite3 database class.
 
-    Loads a SQLite3 database from the given file handle. Optionally a WAL file handle can be provided to read
-    changes from the WAL. Additionally, a specific checkpoint from the WAL can be applied.
+    Loads a SQLite3 database from the given file-like object or path. If a path is provided (or can be deduced
+    from the file-like object), a WAL file will be automatically looked for with a few common suffixes.
+    Optionally a WAL file-like object or path can be directly provided to read changes from the WAL (this takes
+    priority over the aforementioned WAL lookup). Additionally, a specific checkpoint from the WAL can be applied.
 
     Args:
         fh: The path or file-like object to open a SQLite3 database on.
