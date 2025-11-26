@@ -177,6 +177,7 @@ class SQLite3:
 
         if num == 1:  # Page 1 is root
             self.fh.seek(len(c_sqlite3.header))
+            return self.fh.read(self.header.page_size)
         else:
             self.fh.seek((num - 1) * self.page_size)
 
@@ -189,18 +190,10 @@ class SQLite3:
         # Check if the latest valid instance of the page is committed (either the frame itself
         # is the commit frame or it is included in a commit's frames). If so, return that frame's data.
         if self.wal:
-            frames = list(self.wal.frames())
-            last_valid_frame = None
-            for f in frames:
-                if f.valid and f.page_number == num:
-                    last_valid_frame = f
-
-            if last_valid_frame is not None:
-                for commit in self.wal.commits:
-                    # commit.frames contains all frames that were committed together;
-                    # if our last valid frame is in one of those, it's part of that commit.
-                    if last_valid_frame in commit.frames:
-                        return last_valid_frame.data
+            for commit in self.wal.commits:
+                if num in commit:
+                    frame = commit.get(num)
+                    return frame.data
 
         return self.fh.read(self.header.page_size)
 
