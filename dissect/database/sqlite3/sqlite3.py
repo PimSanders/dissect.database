@@ -122,9 +122,6 @@ class SQLite3:
 
         self.page = lru_cache(256)(self.page)
 
-    def open_wal(self, fh: Path | BinaryIO) -> None:
-        self.wal = WAL(fh)
-
     def checkpoints(self) -> Iterator[SQLite3]:
         if not self.wal:
             return
