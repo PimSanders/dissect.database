@@ -1,19 +1,25 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 from typing import Any, BinaryIO
 
 import pytest
 
 from dissect.database.sqlite3 import sqlite3
 
+def test_sqlite_binaryio(sqlite_db: Path) -> None:
+    s = sqlite3.SQLite3(sqlite_db.open("rb"))
+    _sqlite_read_data(s)
 
-def test_sqlite(sqlite_db: BinaryIO) -> None:
+def test_sqlite_path(sqlite_db: Path) -> None:
     s = sqlite3.SQLite3(sqlite_db)
+    _sqlite_read_data(s)
 
-    assert s.header.magic == sqlite3.SQLITE3_HEADER_MAGIC
+def _sqlite_read_data(db: sqlite3.SQLite3) -> None:
+    assert db.header.magic == sqlite3.SQLITE3_HEADER_MAGIC
 
-    tables = list(s.tables())
+    tables = list(db.tables())
     assert len(tables) == 2
 
     table = tables[0]
@@ -21,7 +27,7 @@ def test_sqlite(sqlite_db: BinaryIO) -> None:
     assert table.page == 2
     assert [column.name for column in table.columns] == ["id", "name", "value"]
     assert table.primary_key == "id"
-    assert s.table("test").__dict__ == table.__dict__
+    assert db.table("test").__dict__ == table.__dict__
 
     rows = list(table.rows())
     assert len(rows) == 10
@@ -46,10 +52,30 @@ def test_sqlite(sqlite_db: BinaryIO) -> None:
     assert list(rows[0]) == [("id", 1), ("name", "testing"), ("value", 1337)]
 
 
-def test_sqlite_wal(sqlite_db: BinaryIO, sqlite_wal: BinaryIO) -> None:
-    # After the first checkpoint the "after checkpoint" entries are present
-    s = sqlite3.SQLite3(sqlite_db, sqlite_wal, wal_checkpoint=2)
+def test_sqlite_wal_binaryio(sqlite_db: Path, sqlite_wal: Path) -> None:
+    s = sqlite3.SQLite3(sqlite_db.open("rb"), sqlite_wal.open("rb"), checkpoint=2)
+    _sqlite_read_checkpoint2(s)
 
+    s = sqlite3.SQLite3(sqlite_db.open("rb"), sqlite_wal.open("rb"), checkpoint=1)
+    _sqlite_read_checkpoint1(s)
+
+    s = sqlite3.SQLite3(sqlite_db.open("rb"), sqlite_wal.open("rb"), checkpoint=0)
+    _sqlite_read_checkpoint0(s)
+
+
+def test_sqlite_wal_path(sqlite_db: Path, sqlite_wal: Path) -> None:
+    s = sqlite3.SQLite3(sqlite_db, sqlite_wal, checkpoint=2)
+    _sqlite_read_checkpoint2(s)
+
+    s = sqlite3.SQLite3(sqlite_db, sqlite_wal, checkpoint=1)
+    _sqlite_read_checkpoint1(s)
+
+    s = sqlite3.SQLite3(sqlite_db, sqlite_wal, checkpoint=0)
+    _sqlite_read_checkpoint0(s)
+
+
+def _sqlite_read_checkpoint2(s: sqlite3.SQLite3) -> None:
+    # After the first checkpoint the "after checkpoint" entries are present
     table = next(iter(s.tables()))
 
     rows = list(table.rows())
@@ -83,12 +109,9 @@ def test_sqlite_wal(sqlite_db: BinaryIO, sqlite_wal: BinaryIO) -> None:
     assert rows[8].name == "after checkpoint"
     assert rows[8].value == 45
 
-    sqlite_wal.seek(0)
-    sqlite_db.seek(0)
 
+def _sqlite_read_checkpoint1(s: sqlite3.SQLite3) -> None:
     # After the second checkpoint two more entries are present ("second checkpoint")
-    s = sqlite3.SQLite3(sqlite_db, sqlite_wal, wal_checkpoint=1)
-
     table = next(iter(s.tables()))
 
     rows = list(table.rows())
@@ -128,12 +151,9 @@ def test_sqlite_wal(sqlite_db: BinaryIO, sqlite_wal: BinaryIO) -> None:
     assert rows[10].name == "second checkpoint"
     assert rows[10].value == 101
 
-    sqlite_wal.seek(0)
-    sqlite_db.seek(0)
 
+def _sqlite_read_checkpoint0(s: sqlite3.SQLite3) -> None:
     # After the third checkpoint the deletion and update of one "after checkpoint" are reflected
-    s = sqlite3.SQLite3(sqlite_db, sqlite_wal, wal_checkpoint=0)
-
     table = next(iter(s.tables()))
     rows = list(table.rows())
 

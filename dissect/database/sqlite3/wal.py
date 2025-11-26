@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import struct
 from functools import cached_property, lru_cache
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 from dissect.database.sqlite3.c_sqlite3 import c_sqlite3
@@ -12,15 +13,26 @@ from dissect.database.sqlite3.exception import (
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-
+# See https://sqlite.org/fileformat2.html#wal_file_format
 WAL_HEADER_MAGIC_LE = 0x377F0682
 WAL_HEADER_MAGIC_BE = 0x377F0683
 WAL_HEADER_MAGIC = {WAL_HEADER_MAGIC_LE, WAL_HEADER_MAGIC_BE}
 
 
 class WAL:
-    def __init__(self, fh: BinaryIO):
+    def __init__(self, fh: WAL | Path | BinaryIO):
+        # Use the provided WAL file handle or try to open a sidecar WAL file.
+        if hasattr(fh, "read"):
+            name = getattr(fh, "name", None)
+            path = Path(name) if name else None
+        else:
+            if not isinstance(fh, Path):
+                fh = Path(fh)
+            path = fh
+            fh = path.open("rb")
+
         self.fh = fh
+        self.path = path
         self.header = c_sqlite3.wal_header(fh)
 
         if self.header.magic not in WAL_HEADER_MAGIC:
@@ -154,10 +166,21 @@ class _FrameCollection:
 
 
 class Checkpoint(_FrameCollection):
+    """A checkpoint is an operation that transfers all committed transactions from
+    the WAL file back into the main database file.
+
+    References:
+        - https://sqlite.org/fileformat2.html#wal_file_format
+    """
     pass
 
 
 class Commit(_FrameCollection):
+    """A commit is a collection of frames that were committed together.
+
+    References:
+        - https://sqlite.org/fileformat2.html#wal_file_format
+    """
     pass
 
 

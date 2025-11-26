@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import BinaryIO
+from pathlib import Path
 
 import pytest
 
@@ -8,15 +8,15 @@ from tests._util import absolute_path
 
 
 @pytest.fixture
-def sqlite_db() -> BinaryIO:
-    return absolute_path("_data/sqlite3/test.sqlite").open("rb")
+def sqlite_db() -> Path:
+    return absolute_path("_data/sqlite3/test.sqlite")
 
 
 @pytest.fixture
-def sqlite_wal() -> BinaryIO:
-    return absolute_path("_data/sqlite3/test.sqlite-wal").open("rb")
+def sqlite_wal() -> Path:
+    return absolute_path("_data/sqlite3/test.sqlite-wal")
 
 
 @pytest.fixture
-def empty_db() -> BinaryIO:
-    return absolute_path("_data/sqlite3/empty.sqlite").open("rb")
+def empty_db() -> Path:
+    return absolute_path("_data/sqlite3/empty.sqlite")

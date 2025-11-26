@@ -48,10 +48,27 @@ SERIAL_TYPES = {
     9: lambda fh: 1,
 }
 
+# See https://sqlite.org/fileformat2.html#magic_header_string
 SQLITE3_HEADER_MAGIC = b"SQLite format 3\x00"
 
 
 class SQLite3:
+    """SQLite3 database class.
+
+    Loads a SQLite3 database from the given file handle. Optionally a WAL file handle can be provided to read
+    changes from the WAL. Additionally, a specific checkpoint from the WAL can be applied.
+
+    Args:
+        fh: The path or file-like object to open a SQLite3 database on.
+        wal: The path or file-like object to open a SQLite3 WAL file on.
+        checkpoint: The checkpoint to apply from the WAL file. Can be a Checkpoint object or an integer index.
+
+    Raises:
+        InvalidDatabase: If the file-like object does not look like a SQLite3 database based on the header magic.
+
+    References:
+        - https://sqlite.org/fileformat2.html
+    """
     def __init__(
         self,
         fh: Path | BinaryIO,
@@ -68,38 +85,25 @@ class SQLite3:
 
         self.fh = fh
         self.path = path
+        self.checkpoint = checkpoint
+        self.wal = None
 
-        # Use the provided WAL file handle or try to open a sidecar WAL file.
-        if wal_fh is not None:
-            if hasattr(wal_fh, "read"):
-                name = getattr(wal_fh, "name", None)
-                wal_path = Path(name) if name else None
-            else:
-                if not isinstance(wal_fh, Path):
-                    wal_fh = Path(wal_fh)
-                wal_path = wal_fh
-                wal_fh = wal_path.open("rb")
-        elif self.path:
+        if wal:
+            self.wal = WAL(wal)
+        elif path:
             # Check for common WAL sidecars next to the DB.
             for suffix in (".sqlite-wal", ".db-wal"):
                 if (candidate := self.path.with_suffix(suffix)).exists():
-                    wal_path = candidate
-                    wal_fh = wal_path.open("rb")
+                    self.wal = WAL(candidate.open("rb"))
                     break
-        else:
-            wal_path = None
-            wal_fh = None
 
-        self.wal = WAL(wal_fh) if wal_fh else None
-        self.wal_path = wal_path if wal_fh else None
-        self.wal_checkpoint = wal_checkpoint
-
-        if self.wal and self.wal_checkpoint is not None and isinstance(self.wal_checkpoint, int):
-            checkpoint = self.wal_checkpoint
+        # If a checkpoint index was provided, resolve it to a Checkpoint object.
+        if self.wal and isinstance(self.checkpoint, int):
+            checkpoint = self.checkpoint
             checkpoints = self.wal.checkpoints
             if checkpoint < 0 or checkpoint >= len(checkpoints):
                 raise IndexError("WAL checkpoint index out of range")
-            self.wal_checkpoint = checkpoints[checkpoint]
+            self.checkpoint = checkpoints[checkpoint]
 
         self.header = c_sqlite3.header(self.fh)
         if self.header.magic != SQLITE3_HEADER_MAGIC:
@@ -116,7 +120,7 @@ class SQLite3:
 
         self.page = lru_cache(256)(self.page)
 
-    def open_wal(self, fh: BinaryIO) -> None:
+    def open_wal(self, fh: Path | BinaryIO) -> None:
         self.wal = WAL(fh)
 
     def checkpoints(self) -> Iterator[SQLite3]:
@@ -172,12 +176,15 @@ class SQLite3:
         if (num < 1 or num > self.header.page_count) and self.header.page_count > 0:
             raise InvalidPageNumber("Page number exceeds boundaries")
 
+        if num == 1:  # Page 1 is root
+            self.fh.seek(len(c_sqlite3.header))
+        else:
+            self.fh.seek((num - 1) * self.page_size)
+
         # If a specific WAL checkpoint was provided, use it instead of the on-disk page.
-        if self.wal and self.wal_checkpoint is not None:
-            if num == 1:
-                self.fh.seek(len(c_sqlite3.header))
-            elif num in self.wal_checkpoint:
-                frame = self.wal_checkpoint.get(num)
+        if self.wal and self.checkpoint is not None:
+            if num in self.checkpoint:
+                frame = self.checkpoint.get(num)
                 return frame.data
             else:
                 # If the page is not present in the checkpoint, skip.
@@ -199,10 +206,6 @@ class SQLite3:
                     if last_valid_frame in commit.frames:
                         return last_valid_frame.data
 
-        if num == 1:  # Page 1 is root
-            self.fh.seek(len(c_sqlite3.header))
-        else:
-            self.fh.seek((num - 1) * self.page_size)
         return self.fh.read(self.header.page_size)
 
     def page(self, num: int) -> Page:
