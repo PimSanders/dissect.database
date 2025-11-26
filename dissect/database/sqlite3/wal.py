@@ -47,10 +47,10 @@ class WAL:
 
     @cached_property
     def commits(self) -> list[Commit]:
-        """Collects all commits in the WAL file.
+        """Return all commits in the WAL file.
 
-        For commit records ``header.page_count`` specifies the size of the
-        database file in pages after the commit. For all other records it is 0.
+        Commits are frames where ``header.page_count`` specifies the size of the
+        database file in pages after the commit. For all other frames it is 0.
 
         References:
             - https://sqlite.org/fileformat2.html#wal_file_format
@@ -102,13 +102,12 @@ class Frame:
         self.offset = offset
 
         self.fh = wal.fh
-        self._data = None
 
         self.fh.seek(offset)
         self.header = c_sqlite3.wal_frame(self.fh)
 
     def __repr__(self) -> str:
-        return f"<WALFrame page_number={self.page_number} page_count={self.page_count}>"
+        return f"<Frame page_number={self.page_number} page_count={self.page_count}>"
 
     @property
     def valid(self) -> bool:
@@ -119,10 +118,8 @@ class Frame:
 
     @property
     def data(self) -> bytes:
-        if not self._data:
-            self.fh.seek(self.offset + len(c_sqlite3.wal_frame))
-            self._data = self.fh.read(self.wal.header.page_size)
-        return self._data
+        self.fh.seek(self.offset + len(c_sqlite3.wal_frame))
+        return self.fh.read(self.wal.header.page_size)
 
     @property
     def page_number(self) -> int:
@@ -134,7 +131,7 @@ class Frame:
 
 
 # Collection of frames that were committed together
-class _FramesCollection:
+class _FrameCollection:
     def __init__(self, wal: WAL, frames: list[Frame]):
         self.wal = wal
         self.frames = frames
@@ -156,16 +153,15 @@ class _FramesCollection:
         return self.page_map.get(page, default)
 
 
-class Checkpoint(_FramesCollection):
+class Checkpoint(_FrameCollection):
     pass
 
 
-class Commit(_FramesCollection):
+class Commit(_FrameCollection):
     pass
 
 
-def wal_checksum(buf: bytes, endian: str = ">") -> tuple[int, int]:
-    """For future use, will be used when WAL is fully implemented"""
+def checksum(buf: bytes, endian: str = ">") -> tuple[int, int]:
 
     s0 = s1 = 0
     num_ints = len(buf) // 4

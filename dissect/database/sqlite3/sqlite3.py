@@ -55,8 +55,8 @@ class SQLite3:
     def __init__(
         self,
         fh: Path | BinaryIO,
-        wal_fh: Path | BinaryIO | None = None,
-        wal_checkpoint: Checkpoint | int | None = None,
+        wal: WAL | Path | BinaryIO | None = None,
+        checkpoint: Checkpoint | int | None = None,
     ):
         # Use the provided file handle or try to open the file path.
         if hasattr(fh, "read"):
@@ -82,8 +82,7 @@ class SQLite3:
         elif self.path:
             # Check for common WAL sidecars next to the DB.
             for suffix in (".sqlite-wal", ".db-wal"):
-                candidate = self.path.with_suffix(suffix)
-                if candidate.exists():
+                if (candidate := self.path.with_suffix(suffix)).exists():
                     wal_path = candidate
                     wal_fh = wal_path.open("rb")
                     break
@@ -160,9 +159,9 @@ class SQLite3:
     def raw_page(self, num: int) -> bytes:
         """Retrieve the raw frame data for the given page number.
 
-        Reads the page from a checkpoint if provided.
+        Reads the page from a checkpoint, if this class was initialized with a WAL checkpoint.
 
-        Will first check if the WAL contains a more recent version of the page,
+        If a WAL is available, will first check if the WAL contains a more recent version of the page,
         otherwise it will read the page from the database file.
 
         References:
