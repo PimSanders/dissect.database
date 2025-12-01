@@ -81,7 +81,9 @@ class WAL:
                 commits.append(Commit(self, frames))
                 frames = []
 
-                # TODO There might be data stored in later frames after the commit?
+        if frames:
+            # TODO: Do we want to track these somewhere?
+            log.warning("Found leftover %d frames after the last WAL commit", len(frames))
 
         return commits
 
