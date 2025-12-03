@@ -94,11 +94,10 @@ class SQLite3:
         if wal:
             self.wal = WAL(wal) if not isinstance(wal, WAL) else wal
         elif path:
-            # Check for common WAL sidecars next to the DB.
-            for suffix in (".sqlite-wal", ".db-wal"):
-                if (candidate := self.path.with_suffix(suffix)).exists():
-                    self.wal = WAL(candidate)
-                    break
+            # Check for WAL sidecar next to the DB.
+            wal_path = path.with_name(f"{path.name}-wal")
+            if wal_path.exists():
+                self.wal = WAL(wal_path)
 
         # If a checkpoint index was provided, resolve it to a Checkpoint object.
         if self.wal and isinstance(checkpoint, int):
@@ -179,10 +178,9 @@ class SQLite3:
         if num == 1:  # Page 1 is root
             self.fh.seek(len(c_sqlite3.header))
             return self.fh.read(self.header.page_size)
-        self.fh.seek((num - 1) * self.page_size)
 
         # If a specific WAL checkpoint was provided, use it instead of the on-disk page.
-        if self.wal and self.checkpoint is not None and num in self.checkpoint:
+        if self.checkpoint is not None and num in self.checkpoint:
             frame = self.checkpoint.get(num)
             return frame.data
 
@@ -194,6 +192,7 @@ class SQLite3:
                     frame = commit.get(num)
                     return frame.data
 
+        self.fh.seek((num - 1) * self.page_size)
         return self.fh.read(self.header.page_size)
 
     def page(self, num: int) -> Page:
