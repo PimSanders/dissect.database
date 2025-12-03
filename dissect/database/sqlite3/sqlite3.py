@@ -94,11 +94,10 @@ class SQLite3:
         if wal:
             self.wal = WAL(wal) if not isinstance(wal, WAL) else wal
         elif path:
-            # Check for common WAL sidecars next to the DB.
-            for suffix in (".sqlite-wal", ".db-wal"):
-                if (candidate := self.path.with_suffix(suffix)).exists():
-                    self.wal = WAL(candidate)
-                    break
+            # Check for WAL sidecar next to the DB.
+            wal_path = path.with_name(f"{path.name}-wal")
+            if wal_path.exists():
+                self.wal = WAL(wal_path)
 
         # If a checkpoint index was provided, resolve it to a Checkpoint object.
         if self.wal and isinstance(checkpoint, int):
