@@ -91,6 +91,19 @@ class SQLite3:
         self.wal = None
         self.checkpoint = None
 
+        self.header = c_sqlite3.header(self.fh)
+        if self.header.magic != SQLITE3_HEADER_MAGIC:
+            raise InvalidDatabase("Invalid header magic")
+
+        self.encoding = ENCODING.get(self.header.text_encoding, "utf-8")
+        self.page_size = self.header.page_size
+        if self.page_size == 1:
+            self.page_size = 65536
+
+        self.usable_page_size = self.page_size - self.header.reserved_size
+        if self.usable_page_size < 480:
+            raise InvalidDatabase("Usable page size is too small")
+
         if wal:
             self.wal = WAL(wal) if not isinstance(wal, WAL) else wal
         elif path:
@@ -107,23 +120,10 @@ class SQLite3:
         else:
             self.checkpoint = checkpoint
 
-        self.header = c_sqlite3.header(self.fh)
-        if self.header.magic != SQLITE3_HEADER_MAGIC:
-            raise InvalidDatabase("Invalid header magic")
-
-        self.encoding = ENCODING.get(self.header.text_encoding, "utf-8")
-        self.page_size = self.header.page_size
-        if self.page_size == 1:
-            self.page_size = 65536
-
-        self.usable_page_size = self.page_size - self.header.reserved_size
-        if self.usable_page_size < 480:
-            raise InvalidDatabase("Usable page size is too small")
-
         self.page = lru_cache(256)(self.page)
 
     def checkpoints(self) -> Iterator[SQLite3]:
-    """Yield instances of the database at all available checkpoints in the WAL file, if applicable."""
+        """Yield instances of the database at all available checkpoints in the WAL file, if applicable."""
         if not self.wal:
             return
 

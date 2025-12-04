@@ -10,46 +10,46 @@ if TYPE_CHECKING:
 
 def test_sqlite_wal_binaryio(sqlite_db: Path, sqlite_wal: Path) -> None:
     s = sqlite3.SQLite3(sqlite_db.open("rb"), sqlite_wal.open("rb"), checkpoint=1)
-    _sqlite_read_checkpoint_1(s)
+    _assert_checkpoint_1(s)
 
     s = sqlite3.SQLite3(sqlite_db.open("rb"), sqlite_wal.open("rb"), checkpoint=2)
-    _sqlite_read_checkpoint_2(s)
+    _assert_checkpoint_2(s)
 
     s = sqlite3.SQLite3(sqlite_db.open("rb"), sqlite_wal.open("rb"), checkpoint=3)
-    _sqlite_read_checkpoint_3(s)
+    _assert_checkpoint_3(s)
 
 
 def test_sqlite_wal_auto_detect_binaryio(sqlite_db: Path) -> None:
     s = sqlite3.SQLite3(sqlite_db.open("rb"), checkpoint=1)
-    _sqlite_read_checkpoint_1(s)
+    _assert_checkpoint_1(s)
 
     s = sqlite3.SQLite3(sqlite_db.open("rb"), checkpoint=2)
-    _sqlite_read_checkpoint_2(s)
+    _assert_checkpoint_2(s)
 
     s = sqlite3.SQLite3(sqlite_db.open("rb"), checkpoint=3)
-    _sqlite_read_checkpoint_3(s)
+    _assert_checkpoint_3(s)
 
 
 def test_sqlite_wal_path(sqlite_db: Path, sqlite_wal: Path) -> None:
     s = sqlite3.SQLite3(sqlite_db, sqlite_wal, checkpoint=1)
-    _sqlite_read_checkpoint_1(s)
+    _assert_checkpoint_1(s)
 
     s = sqlite3.SQLite3(sqlite_db, sqlite_wal, checkpoint=2)
-    _sqlite_read_checkpoint_2(s)
+    _assert_checkpoint_2(s)
 
     s = sqlite3.SQLite3(sqlite_db, sqlite_wal, checkpoint=3)
-    _sqlite_read_checkpoint_3(s)
+    _assert_checkpoint_3(s)
 
 
 def test_sqlite_wal_auto_detect_path(sqlite_db: Path) -> None:
     s = sqlite3.SQLite3(sqlite_db, checkpoint=1)
-    _sqlite_read_checkpoint_1(s)
+    _assert_checkpoint_1(s)
 
     s = sqlite3.SQLite3(sqlite_db, checkpoint=2)
-    _sqlite_read_checkpoint_2(s)
+    _assert_checkpoint_2(s)
 
     s = sqlite3.SQLite3(sqlite_db, checkpoint=3)
-    _sqlite_read_checkpoint_3(s)
+    _assert_checkpoint_3(s)
 
 
 def _assert_checkpoint_1(s: sqlite3.SQLite3) -> None:

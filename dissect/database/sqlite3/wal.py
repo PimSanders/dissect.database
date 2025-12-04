@@ -88,11 +88,11 @@ class WAL:
 
     @cached_property
     def checkpoints(self) -> list[Checkpoint]:
-        """Return deduplicated WAL commits (checkpoints), newest first.
+        """Return deduplicated checkpoints, oldest first.
 
         Deduplicate commits by the ``salt1`` value of their first frame. Later
         commits overwrite earlier ones so the returned list contains the most
-        recent commit for each ``salt1``, sorted descending.
+        recent commit for each ``salt1``, sorted ascending.
 
         References:
             - https://sqlite.org/fileformat2.html#wal_file_format
