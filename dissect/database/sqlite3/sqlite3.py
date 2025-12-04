@@ -187,8 +187,8 @@ class SQLite3:
         # Check if the latest valid instance of the page is committed (either the frame itself
         # is the commit frame or it is included in a commit's frames). If so, return that frame's data.
         if self.wal:
-            for commit in self.wal.commits:
-                if (frame := commit.get(num)):
+            for commit in reversed(self.wal.commits):
+                if (frame := commit.get(num)) and frame.valid:
                     return frame.data
 
         # Else we read the page from the database file
