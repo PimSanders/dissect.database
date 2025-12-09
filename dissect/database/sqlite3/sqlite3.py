@@ -187,12 +187,11 @@ class SQLite3:
                 if (frame := commit.get(num)) and frame.valid:
                     return frame.data
 
+        # Else we read the page from the database file.
         if num == 1:  # Page 1 is root
             self.fh.seek(len(c_sqlite3.header))
-            return self.fh.read(self.header.page_size)
-
-        # Else we read the page from the database file
-        self.fh.seek((num - 1) * self.page_size)
+        else:
+            self.fh.seek((num - 1) * self.page_size)
         return self.fh.read(self.header.page_size)
 
     def page(self, num: int) -> Page:
