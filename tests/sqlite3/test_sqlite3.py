@@ -10,20 +10,6 @@ from dissect.database.sqlite3 import sqlite3
 if TYPE_CHECKING:
     from pathlib import Path
 
-<<<<<<< HEAD
-
-def test_sqlite_binaryio(sqlite_db: Path) -> None:
-    s = sqlite3.SQLite3(sqlite_db.open("rb"))
-    _sqlite_read_data(s)
-
-
-def test_sqlite_path(sqlite_db: Path) -> None:
-    s = sqlite3.SQLite3(sqlite_db)
-    _sqlite_read_data(s)
-
-
-def _sqlite_read_data(db: sqlite3.SQLite3) -> None:
-=======
 
 @pytest.mark.parametrize(
     ("db_as_path"),
@@ -32,7 +18,6 @@ def _sqlite_read_data(db: sqlite3.SQLite3) -> None:
 def test_sqlite(sqlite_db: Path, db_as_path: bool) -> None:
     db = sqlite3.SQLite3(sqlite_db) if db_as_path else sqlite3.SQLite3(sqlite_db.open("rb"))
 
->>>>>>> main
     assert db.header.magic == sqlite3.SQLITE3_HEADER_MAGIC
 
     tables = list(db.tables())
