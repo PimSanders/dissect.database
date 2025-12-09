@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import os
 import itertools
 import re
 from functools import lru_cache
@@ -20,6 +22,8 @@ from dissect.database.sqlite3.wal import WAL, Checkpoint
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+log = logging.getLogger(__name__)
+log.setLevel(os.getenv("DISSECT_LOG_SQLITE3", "CRITICAL"))
 
 ENCODING = {
     1: "utf-8",
@@ -182,6 +186,7 @@ class SQLite3:
         # If a specific WAL checkpoint was provided, use it instead of the on-disk page.
         if self.checkpoint is not None and num in self.checkpoint:
             frame = self.checkpoint.get(num)
+            print(f"Reading page {num} from WAL checkpoint at offset {frame.offset}")
             return frame.data
 
         # Check if the latest valid instance of the page is committed (either the frame itself
@@ -190,8 +195,13 @@ class SQLite3:
             for commit in self.wal.commits:
                 if num in commit:
                     frame = commit.get(num)
-                    return frame.data
+                    if (valid:=frame.valid):
+                        print(f"Reading page {num} from WAL commit at offset {frame.offset}: valid={valid}")
+                        return frame.data
+                    else:
+                        print(f"Frame for page {num} in WAL commit at offset {frame.offset} is not valid")
 
+        print(f"Reading page {num} from database file")
         self.fh.seek((num - 1) * self.page_size)
         return self.fh.read(self.header.page_size)
 

@@ -14,6 +14,7 @@ from dissect.database.sqlite3.exception import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
 log = logging.getLogger(__name__)
 log.setLevel(os.getenv("DISSECT_LOG_SQLITE3", "CRITICAL"))
 
@@ -123,11 +124,15 @@ class Frame:
         self.fh.seek(offset)
         self.header = c_sqlite3.wal_frame(self.fh)
 
+        print(f"Page number: {self.page_number}, Page count: {self.page_count}")
+        print(f"Salt: {self.header.salt1.dumps().hex()}, {self.header.salt2.dumps().hex()}")
+        print(f"Checksum: {self.header.checksum1.dumps().hex()}, {self.header.checksum2.dumps().hex()}")
+
     def __repr__(self) -> str:
         return f"<Frame page_number={self.page_number} page_count={self.page_count}>"
 
     @property
-    def valid(self) -> bool:
+    def valid(self, calculate_checksum: bool=False) -> bool:
         """Check if the frame is valid by comparing its salt values and verifying the checksum.
 
         A frame is valid if:
@@ -136,16 +141,75 @@ class Frame:
 
         References:
             - https://sqlite.org/fileformat2.html#wal_file_format
-        """
+        """    
+        # Check salt values
         salt1_match = self.header.salt1 == self.wal.header.salt1
         salt2_match = self.header.salt2 == self.wal.header.salt2
 
-        # print(f"Final 8 bytes of frame-header: {self.header.checksum1}, {self.header.checksum2}")
-        # print(f"First 24 bytes of WAL header:")
+        # Verify checksum
+        # The checksum values in the final 8 bytes of the frame-header (checksum-1 and checksum-2)
+        # exactly match the computed checksum over:
+        # 1. the first 24 bytes of the WAL header
+        # 2. the first 8 bytes of each frame header (up to and including this frame)
+        # 3. the page data of each frame (up to and including this frame)
+        #
+        # If calculate_checksum is False, only verify the salt values (fast path).
+        # if not calculate_checksum:
+        #     return salt1_match and salt2_match
 
-        # print("*"*20)
+        checksum_match = False
+        pos = self.fh.tell()
+        try:
+            # Read the WAL header bytes from the beginning of the file
+            self.fh.seek(0)
+            wal_hdr_size = len(c_sqlite3.wal_header)
+            wal_hdr_bytes = self.fh.read(wal_hdr_size)
+            log.info(f"WAL Header Bytes: {wal_hdr_bytes.hex()}")
+            if len(wal_hdr_bytes) < wal_hdr_size:
+                raise EOFError("WAL header too small for checksum calculation")
 
-        return salt1_match and salt2_match
+            # Start seed with checksum over first 24 bytes of WAL header
+            seed = checksum(wal_hdr_bytes[:24], endian=self.wal.checksum_endian)
+
+            # Iterate frames from the first frame up to and including this frame
+            frame_size = len(c_sqlite3.wal_frame) + self.wal.header.page_size
+            first_frame_offset = len(c_sqlite3.wal_header)
+            offset = first_frame_offset
+
+            while offset <= self.offset:
+                # Read frame header
+                self.fh.seek(offset)
+                frame_hdr_bytes = self.fh.read(len(c_sqlite3.wal_frame))
+                if len(frame_hdr_bytes) < len(c_sqlite3.wal_frame):
+                    raise EOFError("Incomplete frame header while calculating checksum")
+
+                # Checksum first 8 bytes of frame header
+                seed = checksum(frame_hdr_bytes[:8], seed=seed, endian=self.wal.checksum_endian)
+
+                # Read and checksum page data
+                page_offset = offset + len(c_sqlite3.wal_frame)
+                self.fh.seek(page_offset)
+                page_data = self.fh.read(self.wal.header.page_size)
+                if len(page_data) < self.wal.header.page_size:
+                    raise EOFError("Incomplete page data while calculating checksum")
+                seed = checksum(page_data, seed=seed, endian=self.wal.checksum_endian)
+
+                offset += frame_size
+
+                # Compare calculated checksum to stored checksum in this frame header
+                checksum_match = (seed[0], seed[1]) == (self.header.checksum1, self.header.checksum2)
+                log.info(f"Frame at offset {self.offset}: calculated checksum {seed}, "
+                      f"stored checksum ({self.header.checksum1}, {self.header.checksum2}), "
+                      f"match: {checksum_match}")
+
+        finally:
+            # restore file position
+            try:
+                self.fh.seek(pos)
+            except Exception:
+                pass
+
+        return salt1_match and salt2_match and checksum_match
 
     @property
     def data(self) -> bytes:
@@ -201,14 +265,14 @@ class Commit(_FrameCollection):
     """
 
 
-def checksum(buf: bytes, endian: str = ">") -> tuple[int, int]:
+def checksum(buf: bytes, seed: tuple[int, int] = (0, 0), endian: str = ">") -> tuple[int, int]:
     """Calculate the checksum of a WAL header or frame.
 
     References:
         - https://sqlite.org/fileformat2.html#checksum_algorithm
     """
 
-    s0 = s1 = 0
+    s0, s1 = seed
     num_ints = len(buf) // 4
     arr = struct.unpack(f"{endian}{num_ints}I", buf)
 
