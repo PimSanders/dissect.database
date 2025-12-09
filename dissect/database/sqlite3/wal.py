@@ -8,9 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 from dissect.database.sqlite3.c_sqlite3 import c_sqlite3
-from dissect.database.sqlite3.exception import (
-    InvalidDatabase,
-)
+from dissect.database.sqlite3.exception import InvalidDatabase
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -41,7 +39,7 @@ class WAL:
         self.header = c_sqlite3.wal_header(fh)
 
         if self.header.magic not in WAL_HEADER_MAGIC:
-            raise InvalidDatabase("Invalid header magic")
+            raise InvalidDatabase("Invalid WAL header magic")
 
         self.checksum_endian = "<" if self.header.magic == WAL_HEADER_MAGIC_LE else ">"
 
@@ -90,11 +88,11 @@ class WAL:
 
     @cached_property
     def checkpoints(self) -> list[Checkpoint]:
-        """Return deduplicated WAL commits (checkpoints), newest first.
+        """Return deduplicated checkpoints, oldest first.
 
-        Deduplicate commits by the salt1 value of their first frame. Later
+        Deduplicate commits by the ``salt1`` value of their first frame. Later
         commits overwrite earlier ones so the returned list contains the most
-        recent commit for each salt1, sorted descending.
+        recent commit for each ``salt1``, sorted ascending.
 
         References:
             - https://sqlite.org/fileformat2.html#wal_file_format
@@ -108,10 +106,7 @@ class WAL:
             # Keep the most recent commit for each salt1 (later commits overwrite).
             checkpoints_map[salt1] = commit
 
-        return sorted(
-            checkpoints_map.values(),
-            key=lambda c: c.frames[0].header.salt1,
-        )
+        return [checkpoints_map[salt] for salt in sorted(checkpoints_map.keys())]
 
 
 class Frame:

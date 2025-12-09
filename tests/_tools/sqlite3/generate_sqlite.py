@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+=======
+from __future__ import annotations
+
+>>>>>>> main
 import sqlite3
 from pathlib import Path
 
@@ -42,12 +47,23 @@ def create_checkpoint() -> None:
 
 
 def move_files() -> None:
+<<<<<<< HEAD
     Path("db.sqlite").rename("test.sqlite")
     Path("db.sqlite-wal").rename("test.sqlite-wal")
     Path("db.sqlite-shm").rename("test.sqlite-shm")
 
     # Remove this line if the shm file is needed as well
     Path("test.sqlite-shm").unlink()
+=======
+    destination_dir = (Path(__file__).parent / "../../_data/sqlite3/").resolve()
+
+    Path("db.sqlite").rename(destination_dir / "test.sqlite")
+    Path("db.sqlite-wal").rename(destination_dir / "test.sqlite-wal")
+    Path("db.sqlite-shm").rename(destination_dir / "test.sqlite-shm")
+
+    # Remove this line if the shm file is needed as well
+    Path(destination_dir / "test.sqlite-shm").unlink()
+>>>>>>> main
 
 
 if __name__ == "__main__":

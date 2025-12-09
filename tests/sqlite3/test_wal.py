@@ -2,57 +2,46 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
+
 from dissect.database.sqlite3 import sqlite3
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_sqlite_wal_binaryio(sqlite_db: Path, sqlite_wal: Path) -> None:
-    s = sqlite3.SQLite3(sqlite_db.open("rb"), sqlite_wal.open("rb"), checkpoint=1)
-    _sqlite_read_checkpoint_1(s)
+@pytest.mark.parametrize(
+    ("db_as_path"),
+    [pytest.param(True, id="db_as_path"), pytest.param(False, id="db_as_fh")],
+)
+@pytest.mark.parametrize(
+    ("wal_as_path"),
+    [pytest.param(True, id="wal_as_path"), pytest.param(False, id="wal_as_fh")],
+)
+def test_sqlite_wal(sqlite_db: Path, sqlite_wal: Path, db_as_path: bool, wal_as_path: bool) -> None:
+    db = sqlite3.SQLite3(
+        sqlite_db if db_as_path else sqlite_db.open("rb"),
+        sqlite_wal if wal_as_path else sqlite_wal.open("rb"),
+        checkpoint=1,
+    )
+    _assert_checkpoint_1(db)
 
-    s = sqlite3.SQLite3(sqlite_db.open("rb"), sqlite_wal.open("rb"), checkpoint=2)
-    _sqlite_read_checkpoint_2(s)
+    db = sqlite3.SQLite3(
+        sqlite_db if db_as_path else sqlite_db.open("rb"),
+        sqlite_wal if wal_as_path else sqlite_wal.open("rb"),
+        checkpoint=2,
+    )
+    _assert_checkpoint_2(db)
 
-    s = sqlite3.SQLite3(sqlite_db.open("rb"), sqlite_wal.open("rb"), checkpoint=3)
-    _sqlite_read_checkpoint_3(s)
-
-
-def test_sqlite_wal_auto_detect_binaryio(sqlite_db: Path) -> None:
-    s = sqlite3.SQLite3(sqlite_db.open("rb"), checkpoint=1)
-    _sqlite_read_checkpoint_1(s)
-
-    s = sqlite3.SQLite3(sqlite_db.open("rb"), checkpoint=2)
-    _sqlite_read_checkpoint_2(s)
-
-    s = sqlite3.SQLite3(sqlite_db.open("rb"), checkpoint=3)
-    _sqlite_read_checkpoint_3(s)
-
-
-def test_sqlite_wal_path(sqlite_db: Path, sqlite_wal: Path) -> None:
-    s = sqlite3.SQLite3(sqlite_db, sqlite_wal, checkpoint=1)
-    _sqlite_read_checkpoint_1(s)
-
-    s = sqlite3.SQLite3(sqlite_db, sqlite_wal, checkpoint=2)
-    _sqlite_read_checkpoint_2(s)
-
-    s = sqlite3.SQLite3(sqlite_db, sqlite_wal, checkpoint=3)
-    _sqlite_read_checkpoint_3(s)
+    db = sqlite3.SQLite3(
+        sqlite_db if db_as_path else sqlite_db.open("rb"),
+        sqlite_wal if wal_as_path else sqlite_wal.open("rb"),
+        checkpoint=3,
+    )
+    _assert_checkpoint_3(db)
 
 
-def test_sqlite_wal_auto_detect_path(sqlite_db: Path) -> None:
-    s = sqlite3.SQLite3(sqlite_db, checkpoint=1)
-    _sqlite_read_checkpoint_1(s)
-
-    s = sqlite3.SQLite3(sqlite_db, checkpoint=2)
-    _sqlite_read_checkpoint_2(s)
-
-    s = sqlite3.SQLite3(sqlite_db, checkpoint=3)
-    _sqlite_read_checkpoint_3(s)
-
-
-def _sqlite_read_checkpoint_1(s: sqlite3.SQLite3) -> None:
+def _assert_checkpoint_1(s: sqlite3.SQLite3) -> None:
     # After the first checkpoint the "after checkpoint" entries are present
     table = next(iter(s.tables()))
 
@@ -88,7 +77,7 @@ def _sqlite_read_checkpoint_1(s: sqlite3.SQLite3) -> None:
     assert rows[8].value == 45
 
 
-def _sqlite_read_checkpoint_2(s: sqlite3.SQLite3) -> None:
+def _assert_checkpoint_2(s: sqlite3.SQLite3) -> None:
     # After the second checkpoint two more entries are present ("second checkpoint")
     table = next(iter(s.tables()))
 
@@ -130,7 +119,7 @@ def _sqlite_read_checkpoint_2(s: sqlite3.SQLite3) -> None:
     assert rows[10].value == 101
 
 
-def _sqlite_read_checkpoint_3(s: sqlite3.SQLite3) -> None:
+def _assert_checkpoint_3(s: sqlite3.SQLite3) -> None:
     # After the third checkpoint the deletion and update of one "after checkpoint" are reflected
     table = next(iter(s.tables()))
     rows = list(table.rows())
