@@ -109,7 +109,7 @@ class SQLite3:
         elif path:
             # Check for WAL sidecar next to the DB.
             wal_path = path.with_name(f"{path.name}-wal")
-            if wal_path.exists():
+            if wal_path.exists() and wal_path.stat().st_size > 0:
                 self.wal = WAL(wal_path)
 
         # If a checkpoint index was provided, resolve it to a Checkpoint object.
