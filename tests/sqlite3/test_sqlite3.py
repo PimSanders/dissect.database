@@ -12,15 +12,15 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.parametrize(
-    ("db_as_path"),
-    [pytest.param(True, id="db_as_path"), pytest.param(False, id="db_as_fh")],
+    ("open_as_path"),
+    [pytest.param(True, id="as_path"), pytest.param(False, id="as_fh")],
 )
-def test_sqlite(sqlite_db: Path, db_as_path: bool) -> None:
-    db = sqlite3.SQLite3(sqlite_db) if db_as_path else sqlite3.SQLite3(sqlite_db.open("rb"))
+def test_sqlite(sqlite_db: Path, open_as_path: bool) -> None:
+    db = sqlite3.SQLite3(sqlite_db if open_as_path else sqlite_db.open("rb"))
     _assert_sqlite_db(db)
     db.close()
 
-    with sqlite3.SQLite3(sqlite_db) if db_as_path else sqlite3.SQLite3(sqlite_db.open("rb")) as db:
+    with sqlite3.SQLite3(sqlite_db if open_as_path else sqlite_db.open("rb")) as db:
         _assert_sqlite_db(db)
 
 

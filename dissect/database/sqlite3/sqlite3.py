@@ -80,15 +80,11 @@ class SQLite3:
         wal: WAL | Path | BinaryIO | None = None,
         checkpoint: Checkpoint | int | None = None,
     ):
-        # Use the provided file handle or try to open the file path.
-        if hasattr(fh, "read"):
-            name = getattr(fh, "name", None)
-            path = Path(name) if name else None
-            self.db_opened_from_path = False
-        else:
+        if isinstance(fh, Path):
             path = fh
             fh = path.open("rb")
-            self.db_opened_from_path = True
+        else:
+            path = None
 
         self.fh = fh
         self.path = path
@@ -109,14 +105,21 @@ class SQLite3:
             raise InvalidDatabase("Usable page size is too small")
 
         if wal:
-            self.wal = WAL(wal) if not isinstance(wal, WAL) else wal
-            self.wal_opened_from_path = not hasattr(wal, "read")
-        elif path:
+            self.wal = wal if isinstance(wal, WAL) else WAL(wal)
+        else:
             # Check for WAL sidecar next to the DB.
-            wal_path = path.with_name(f"{path.name}-wal")
-            if wal_path.exists() and wal_path.stat().st_size > 0:
-                self.wal = WAL(wal_path)
-                self.wal_opened_from_path = True
+            # If we have a path, we can deduce the WAL path.
+            # If we don't have a path, we can try to get it from the file handle.
+            if path is None:
+                # By deducing the path at this point and not earlier, we can keep the original passed
+                # path to indicate if we should close the file handle later on.
+                name = getattr(fh, "name", None)
+                path = Path(name) if name else None
+
+            if path is not None:
+                wal_path = path.with_name(f"{path.name}-wal")
+                if wal_path.exists() and wal_path.stat().st_size > 0:
+                    self.wal = WAL(wal_path)
 
         # If a checkpoint index was provided, resolve it to a Checkpoint object.
         if self.wal and isinstance(checkpoint, int):
@@ -137,14 +140,13 @@ class SQLite3:
         return False
 
     def close(self) -> None:
-        """Close the database and WAL file handles if a Path was provided."""
+        """Close the database and WAL."""
         # Only close DB handle if we opened it using a path
-        if self.db_opened_from_path:
+        if self.path is not None:
             self.fh.close()
 
-        # Only close WAL handle if we opened it using a path
-        if self.wal_opened_from_path:
-            self.wal.fh.close()
+        if self.wal is not None:
+            self.wal.close()
 
     def checkpoints(self) -> Iterator[SQLite3]:
         """Yield instances of the database at all available checkpoints in the WAL file, if applicable."""

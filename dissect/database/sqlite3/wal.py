@@ -23,16 +23,13 @@ WAL_HEADER_MAGIC = {WAL_HEADER_MAGIC_LE, WAL_HEADER_MAGIC_BE}
 
 
 class WAL:
-    def __init__(self, fh: WAL | Path | BinaryIO):
+    def __init__(self, fh: Path | BinaryIO):
         # Use the provided WAL file handle or try to open a sidecar WAL file.
-        if hasattr(fh, "read"):
-            name = getattr(fh, "name", None)
-            path = Path(name) if name else None
-        else:
-            if not isinstance(fh, Path):
-                fh = Path(fh)
+        if isinstance(fh, Path):
             path = fh
             fh = path.open("rb")
+        else:
+            path = None
 
         self.fh = fh
         self.path = path
@@ -44,6 +41,12 @@ class WAL:
         self.checksum_endian = "<" if self.header.magic == WAL_HEADER_MAGIC_LE else ">"
 
         self.frame = lru_cache(1024)(self.frame)
+
+    def close(self) -> None:
+        """Close the WAL."""
+        # Only close WAL handle if we opened it using a path
+        if self.path is not None:
+            self.fh.close()
 
     def frame(self, frame_idx: int) -> Frame:
         frame_size = len(c_sqlite3.wal_frame) + self.header.page_size
