@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import itertools
+import logging
+import os
 import re
 from functools import lru_cache
 from io import BytesIO
@@ -20,8 +22,11 @@ from dissect.database.sqlite3.wal import WAL, Checkpoint
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from types import TracebackType
-
     from typing_extensions import Self
+
+log = logging.getLogger(__name__)
+log.setLevel(os.getenv("DISSECT_LOG_SQLITE3", "CRITICAL"))
+    
 
 ENCODING = {
     1: "utf-8",
@@ -202,6 +207,7 @@ class SQLite3:
 
         # If a specific WAL checkpoint was provided, use it instead of the on-disk page.
         if self.checkpoint is not None and (frame := self.checkpoint.get(num)):
+            log.debug(f"Reading page {num} from WAL checkpoint")
             return frame.data
 
         # Check if the latest valid instance of the page is committed (either the frame itself
@@ -209,12 +215,26 @@ class SQLite3:
         if self.wal:
             for commit in reversed(self.wal.commits):
                 if (frame := commit.get(num)) and frame.valid:
-                    return frame.data
+                    log.debug(f"Reading page {num} from WAL commit")
+                    # if num == 1:
+                    #     # set offset so the frame indicates the header bytes should be skipped
+                    #     frame.offset = len(c_sqlite3.wal_header)
+                    #     log.debug(frame.header)
+                    #     log.debug(frame.header.dumps().hex())
+                    #     log.debug(frame)
+                    #     log.debug(frame.data.hex())
+                    #     return frame.data
+                    # else:
+                        # return frame.data
+                    if num != 1:
+                        return frame.data
 
         # Else we read the page from the database file.
         if num == 1:  # Page 1 is root
+            log.debug("Reading page 1 from database file")
             self.fh.seek(len(c_sqlite3.header))
         else:
+            log.debug(f"Reading page {num} from database file")
             self.fh.seek((num - 1) * self.page_size)
         return self.fh.read(self.header.page_size)
 
@@ -421,7 +441,7 @@ class Page:
         self.right_page = None
 
         if self.header.flags not in PAGE_TYPES:
-            raise InvalidPageType("Unknown page type")
+            raise InvalidPageType(f"Unknown page type: {self.header.flags}")
 
         fp = header_len
         if self.header.flags in (
