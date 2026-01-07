@@ -204,14 +204,22 @@ class SQLite3:
 
         # If a specific WAL checkpoint was provided, use it instead of the on-disk page.
         if self.checkpoint is not None and (frame := self.checkpoint.get(num)):
-            return frame.data
+            data = frame.data
+            # When reading page 1, strip the SQLite header bytes if present so the page parser sees the page header.
+            if num == 1 and data.startswith(SQLITE3_HEADER_MAGIC):
+                return data[len(c_sqlite3.header) :]
+            return data
 
         # Check if the latest valid instance of the page is committed (either the frame itself
         # is the commit frame or it is included in a commit's frames). If so, return that frame's data.
         if self.wal:
             for commit in reversed(self.wal.commits):
                 if (frame := commit.get(num)) and frame.valid:
-                    return frame.data
+                    data = frame.data
+                    # When reading page 1 from WAL, strip the SQLite header bytes if present.
+                    if num == 1 and data.startswith(SQLITE3_HEADER_MAGIC):
+                        return data[len(c_sqlite3.header) :]
+                    return data
 
         # Else we read the page from the database file.
         if num == 1:  # Page 1 is root
