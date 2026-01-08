@@ -79,6 +79,7 @@ class SQLite3:
         fh: Path | BinaryIO,
         wal: WAL | Path | BinaryIO | None = None,
         checkpoint: Checkpoint | int | None = None,
+        checksum: bool = False,
     ):
         if isinstance(fh, Path):
             path = fh
@@ -90,6 +91,7 @@ class SQLite3:
         self.path = path
         self.wal = None
         self.checkpoint = None
+        self.checksum = checksum
 
         self.header = c_sqlite3.header(self.fh)
         if self.header.magic != SQLITE3_HEADER_MAGIC:
@@ -211,7 +213,7 @@ class SQLite3:
             # Check if the latest valid instance of the page is committed (either the frame itself
             # is the commit frame or it is included in a commit's frames). If so, return that frame's data.
             for commit in reversed(self.wal.commits):
-                if (frame := commit.get(num)) and frame.valid:
+                if (frame := commit.get(num)) and frame.valid(checksum=self.checksum):
                     data = frame.data
                     break
 
