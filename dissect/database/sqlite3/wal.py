@@ -136,8 +136,6 @@ class Frame:
         References:
             - https://sqlite.org/fileformat2.html#wal_file_format
         """
-        print(f"checksum: {checksum}")
-
         return self.validate_salt() and self.validate_checksum() if checksum else self.validate_salt()
 
     def validate_salt(self) -> bool:
@@ -175,7 +173,7 @@ class Frame:
                 raise EOFError("WAL header too small for checksum calculation")
 
             # Start seed with checksum over first 24 bytes of WAL header
-            seed = self.calculate_checksum(wal_hdr_bytes[:24], endian=self.wal.checksum_endian)
+            seed = calculate_checksum(wal_hdr_bytes[:24], endian=self.wal.checksum_endian)
 
             # Iterate frames from the first frame up to and including this frame
             frame_size = len(c_sqlite3.wal_frame) + self.wal.header.page_size
@@ -190,7 +188,7 @@ class Frame:
                     raise EOFError("Incomplete frame header while calculating checksum")
 
                 # Checksum first 8 bytes of frame header
-                seed = self.calculate_checksum(frame_hdr_bytes[:8], seed=seed, endian=self.wal.checksum_endian)
+                seed = calculate_checksum(frame_hdr_bytes[:8], seed=seed, endian=self.wal.checksum_endian)
 
                 # Read and checksum page data
                 page_offset = offset + len(c_sqlite3.wal_frame)
@@ -198,15 +196,12 @@ class Frame:
                 page_data = self.fh.read(self.wal.header.page_size)
                 if len(page_data) < self.wal.header.page_size:
                     raise EOFError("Incomplete page data while calculating checksum")
-                seed = self.calculate_checksum(page_data, seed=seed, endian=self.wal.checksum_endian)
+                seed = calculate_checksum(page_data, seed=seed, endian=self.wal.checksum_endian)
 
                 offset += frame_size
 
                 # Compare calculated checksum to stored checksum in this frame header
                 checksum_match = (seed[0], seed[1]) == (self.header.checksum1, self.header.checksum2)
-                # log.info(f"Frame at offset {self.offset}: calculated checksum {seed}, "
-                #       f"stored checksum ({self.header.checksum1}, {self.header.checksum2}), "
-                #       f"match: {checksum_match}")
 
         finally:
             # restore file position
@@ -216,22 +211,6 @@ class Frame:
                 pass
 
         return checksum_match
-
-    def calculate_checksum(buf: bytes, seed: tuple[int, int] = (0, 0), endian: str = ">") -> tuple[int, int]:
-        """Calculate the checksum of a WAL header or frame.
-        References:
-            - https://sqlite.org/fileformat2.html#checksum_algorithm
-        """
-
-        s0, s1 = seed
-        num_ints = len(buf) // 4
-        arr = struct.unpack(f"{endian}{num_ints}I", buf)
-
-        for int_num in range(0, num_ints, 2):
-            s0 = (s0 + (arr[int_num] + s1)) & 0xFFFFFFFF
-            s1 = (s1 + (arr[int_num + 1] + s0)) & 0xFFFFFFFF
-
-        return s0, s1
 
     @property
     def data(self) -> bytes:
@@ -286,3 +265,19 @@ class Commit(_FrameCollection):
     References:
         - https://sqlite.org/fileformat2.html#wal_file_format
     """
+
+def calculate_checksum(buf: bytes, seed: tuple[int, int] = (0, 0), endian: str = ">") -> tuple[int, int]:
+    """Calculate the checksum of a WAL header or frame.
+    References:
+        - https://sqlite.org/fileformat2.html#checksum_algorithm
+    """
+
+    s0, s1 = seed
+    num_ints = len(buf) // 4
+    arr = struct.unpack(f"{endian}{num_ints}I", buf)
+
+    for int_num in range(0, num_ints, 2):
+        s0 = (s0 + (arr[int_num] + s1)) & 0xFFFFFFFF
+        s1 = (s1 + (arr[int_num + 1] + s0)) & 0xFFFFFFFF
+
+    return s0, s1
