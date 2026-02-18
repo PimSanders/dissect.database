@@ -137,8 +137,8 @@ class Frame:
         """
         return self.validate_salt() and self.validate_checksum() if validate_checksum else self.validate_salt()
 
-    def validate_salt(self) -> bool:
-        """Check if the frame's salt values match those in the WAL header.
+    def is_valid_salt(self) -> bool:
+        """Return whether the frame's salt values match those in the WAL header.
 
         References:
             - https://sqlite.org/fileformat2.html#wal_file_format
@@ -148,8 +148,8 @@ class Frame:
 
         return salt1_match and salt2_match
 
-    def validate_checksum(self) -> bool:
-        """Check if the frame's checksum matches the calculated checksum.
+    def is_valid_checksum(self) -> bool:
+        """Return whether the frame's checksum matches the calculated checksum.
 
         The checksum values in the final 8 bytes of the frame-header (checksum-1 and checksum-2)
         exactly match the computed checksum over:
