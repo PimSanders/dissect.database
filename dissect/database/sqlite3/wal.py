@@ -125,8 +125,8 @@ class Frame:
     def __repr__(self) -> str:
         return f"<Frame page_number={self.page_number} page_count={self.page_count}>"
 
-    def valid(self, validate_checksum: bool = True) -> bool:
-        """Check if the frame is valid by comparing its salt values and optionally verifying the checksum.
+    def is_valid(self, validate_checksum: bool = True) -> bool:
+        """Return whether the frame is valid by comparing its salt values and optionally verifying the checksum.
 
         A frame is valid if:
             - Its salt1 and salt2 values match those in the WAL header.
@@ -135,7 +135,7 @@ class Frame:
         References:
             - https://sqlite.org/fileformat2.html#wal_file_format
         """
-        return self.validate_salt() and self.validate_checksum() if validate_checksum else self.validate_salt()
+        return self.is_valid_salt() and self.is_valid_checksum() if validate_checksum else self.is_valid_salt()
 
     def is_valid_salt(self) -> bool:
         """Return whether the frame's salt values match those in the WAL header.

@@ -66,6 +66,7 @@ class SQLite3:
         fh: The path or file-like object to open a SQLite3 database on.
         wal: The path or file-like object to open a SQLite3 WAL file on.
         checkpoint: The checkpoint to apply from the WAL file. Can be a :class:`Checkpoint` object or an integer index.
+        validate_checksum: A boolean that sets whether to validate the checksum of frames when reading.
 
     Raises:
         InvalidDatabase: If the file-like object does not look like a SQLite3 database based on the header magic.
@@ -213,7 +214,7 @@ class SQLite3:
             # Check if the latest valid instance of the page is committed (either the frame itself
             # is the commit frame or it is included in a commit's frames). If so, return that frame's data.
             for commit in reversed(self.wal.commits):
-                if (frame := commit.get(num)) and frame.valid(validate_checksum=self.validate_checksum):
+                if (frame := commit.get(num)) and frame.is_valid(validate_checksum=self.validate_checksum):
                     data = frame.data
                     break
 
