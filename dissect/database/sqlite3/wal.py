@@ -162,8 +162,6 @@ class Frame:
             - https://sqlite.org/fileformat2.html#wal_file_format
             - https://github.com/sqlite/sqlite/blob/master/src/wal.c#L995-L1047
         """
-        checksum_match = False
-
         # Start seed with checksum over first 24 bytes of WAL header
         seed = calculate_checksum(self.header.dumps()[:24], endian=self.wal.checksum_endian)
 
@@ -191,9 +189,7 @@ class Frame:
             offset += frame_size
 
         # Compare calculated checksum to stored checksum in this frame header
-        checksum_match = (seed[0], seed[1]) == (self.header.checksum1, self.header.checksum2)
-
-        return checksum_match
+        return (seed[0], seed[1]) == (self.header.checksum1, self.header.checksum2)
 
     @property
     def data(self) -> bytes:
