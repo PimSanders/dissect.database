@@ -125,7 +125,7 @@ class Frame:
     def __repr__(self) -> str:
         return f"<Frame page_number={self.page_number} page_count={self.page_count}>"
 
-    def is_valid(self, validate_checksum: bool = True) -> bool:
+    def is_valid(self, validate_checksums: bool = True) -> bool:
         """Return whether the frame is valid by comparing its salt values and optionally verifying the checksum.
 
         A frame is valid if:
@@ -135,7 +135,7 @@ class Frame:
         References:
             - https://sqlite.org/fileformat2.html#wal_file_format
         """
-        return (self.is_valid_salt() and self.is_valid_checksum()) if validate_checksum else self.is_valid_salt()
+        return (self.is_valid_salt() and self.is_valid_checksum()) if validate_checksums else self.is_valid_salt()
 
     def is_valid_salt(self) -> bool:
         """Return whether the frame's salt values match those in the WAL header.
@@ -163,51 +163,35 @@ class Frame:
             - https://github.com/sqlite/sqlite/blob/master/src/wal.c#L995-L1047
         """
         checksum_match = False
-        base_position = self.fh.tell()
-        try:
-            # Read the WAL header bytes from the beginning of the file
-            wal_hdr_size = len(c_sqlite3.wal_header)
-            wal_hdr_bytes = self.wal.header.dumps()
-            if len(wal_hdr_bytes) < wal_hdr_size:
-                raise EOFError("WAL header too small for checksum calculation")
 
-            # Start seed with checksum over first 24 bytes of WAL header
-            seed = calculate_checksum(wal_hdr_bytes[:24], endian=self.wal.checksum_endian)
+        # Start seed with checksum over first 24 bytes of WAL header
+        seed = calculate_checksum(self.header.dumps()[:24], endian=self.wal.checksum_endian)
 
-            # Iterate frames from the first frame up to and including this frame
-            frame_size = len(c_sqlite3.wal_frame) + self.wal.header.page_size
-            first_frame_offset = len(c_sqlite3.wal_header)
-            offset = first_frame_offset
+        # Iterate frames from the first frame up to and including this frame
+        frame_size = len(c_sqlite3.wal_frame) + self.wal.header.page_size
+        first_frame_offset = len(c_sqlite3.wal_header)
+        offset = first_frame_offset
 
-            while offset <= self.offset:
-                # Read frame header
-                self.fh.seek(offset)
-                frame_hdr_bytes = self.fh.read(len(c_sqlite3.wal_frame))
-                if len(frame_hdr_bytes) < len(c_sqlite3.wal_frame):
-                    raise EOFError("Incomplete frame header while calculating checksum")
+        while offset <= self.offset:
+            # Read frame header
+            self.fh.seek(offset)
+            frame_hdr_bytes = self.fh.read(len(c_sqlite3.wal_frame))
+            if len(frame_hdr_bytes) < len(c_sqlite3.wal_frame):
+                raise EOFError("Incomplete frame header while calculating checksum")
 
-                # Checksum first 16 bytes of frame header
-                seed = calculate_checksum(frame_hdr_bytes[:16], seed=seed, endian=self.wal.checksum_endian)
+            # Checksum first 16 bytes of frame header
+            seed = calculate_checksum(frame_hdr_bytes[:16], seed=seed, endian=self.wal.checksum_endian)
 
-                # Read and checksum page data
-                page_offset = offset + len(c_sqlite3.wal_frame)
-                self.fh.seek(page_offset)
-                page_data = self.fh.read(self.wal.header.page_size)
-                if len(page_data) < self.wal.header.page_size:
-                    raise EOFError("Incomplete page data while calculating checksum")
-                seed = calculate_checksum(page_data, seed=seed, endian=self.wal.checksum_endian)
+            # Read and checksum page data
+            page_data = self.fh.read(self.wal.header.page_size)
+            if len(page_data) < self.wal.header.page_size:
+                raise EOFError("Incomplete page data while calculating checksum")
+            seed = calculate_checksum(page_data, seed=seed, endian=self.wal.checksum_endian)
 
-                offset += frame_size
+            offset += frame_size
 
-                # Compare calculated checksum to stored checksum in this frame header
-                checksum_match = (seed[0], seed[1]) == (self.header.checksum1, self.header.checksum2)
-
-        finally:
-            # restore file position
-            try:
-                self.fh.seek(base_position)
-            except Exception:
-                pass
+        # Compare calculated checksum to stored checksum in this frame header
+        checksum_match = (seed[0], seed[1]) == (self.header.checksum1, self.header.checksum2)
 
         return checksum_match
 

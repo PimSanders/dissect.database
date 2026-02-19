@@ -57,22 +57,22 @@ def test_sqlite_wal_checkpoint(sqlite_db: Path, sqlite_wal: Path, db_as_path: bo
 )
 def test_sqlite_wal_checksum_validation(sqlite_db: Path, sqlite_wal: Path, db_as_path: bool, wal_as_path: bool) -> None:
     # Test that the WAL checksum validation works as expected
-    # When validate_checksum=True, only entries before the last checkpoint are visible
+    # When validate_checksums=True, only entries before the last checkpoint are visible
     db = sqlite3.SQLite3(
         sqlite_db if db_as_path else sqlite_db.open("rb"),
         sqlite_wal if wal_as_path else sqlite_wal.open("rb"),
-        validate_checksum=True,
+        validate_checksums=True,
     )
 
     _assert_valid_checksum(db)
 
     db.close()
 
-    # When validate_checksum=False, entries after the last checkpoint are also visible
+    # When validate_checksums=False, entries after the last checkpoint are also visible
     db = sqlite3.SQLite3(
         sqlite_db if db_as_path else sqlite_db.open("rb"),
         sqlite_wal if wal_as_path else sqlite_wal.open("rb"),
-        validate_checksum=False,
+        validate_checksums=False,
     )
 
     _assert_invalid_checksum(db)
