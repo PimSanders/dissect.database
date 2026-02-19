@@ -135,7 +135,7 @@ class Frame:
         References:
             - https://sqlite.org/fileformat2.html#wal_file_format
         """
-        return self.is_valid_salt() and self.is_valid_checksum() if validate_checksum else self.is_valid_salt()
+        return (self.is_valid_salt() and self.is_valid_checksum()) if validate_checksum else self.is_valid_salt()
 
     def is_valid_salt(self) -> bool:
         """Return whether the frame's salt values match those in the WAL header.
