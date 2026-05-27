@@ -10,6 +10,8 @@ from tests._util import absolute_path
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from pytest_benchmark.fixture import BenchmarkFixture
+
 
 @pytest.mark.parametrize(
     ("db_as_path"),
@@ -314,3 +316,19 @@ def test_wal_page_count() -> None:
     assert db.wal.highest_page_num == 4
     assert db.header.page_count == 2
     assert db.page_count == 4
+
+
+@pytest.mark.parametrize(
+    ("validate"),
+    [pytest.param(True, id="True"), pytest.param(False, id="False")],
+)
+@pytest.mark.benchmark
+def test_benchmark_wal_checksum_validation(
+    big_sqlite_db: Path, big_sqlite_wal: Path, validate: bool, benchmark: BenchmarkFixture
+) -> None:
+    def benchy() -> None:
+        # list(db.tables()[0].rows())
+        db = sqlite3.SQLite3(big_sqlite_db, big_sqlite_wal, validate_checksums=validate)
+        list(list(db.tables())[0].rows())
+
+    benchmark(benchy)

@@ -39,7 +39,9 @@ class WAL:
             raise InvalidDatabase("Invalid WAL header magic")
 
         self.checksum_endian = "<" if self.header.magic == WAL_HEADER_MAGIC_LE else ">"
-        self.highest_page_num = max(fr.page_number for commit in self.commits for fr in commit.frames if fr.valid)
+        self.highest_page_num = max(
+            fr.page_number for commit in self.commits for fr in commit.frames if fr.is_valid_salt()
+        )
 
         self.frame = lru_cache(1024)(self.frame)
 
@@ -253,7 +255,6 @@ def calculate_checksum(buf: bytes, seed: tuple[int, int] = (0, 0), endian: str =
     References:
         - https://sqlite.org/fileformat2.html#checksum_algorithm
     """
-
     s0, s1 = seed
     num_ints = len(buf) // 4
     arr = struct.unpack(f"{endian}{num_ints}I", buf)
