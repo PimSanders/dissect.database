@@ -6,18 +6,18 @@ from typing import TYPE_CHECKING, BinaryIO
 
 from dissect.database.ese.ese import ESE
 from dissect.database.ese.exception import KeyNotFoundError
-from dissect.database.ese.ntds.objects import DomainDNS, Object
+from dissect.database.ese.ntds.objects import Object
 from dissect.database.ese.ntds.pek import PEK
 from dissect.database.ese.ntds.query import Query
 from dissect.database.ese.ntds.schema import Schema
 from dissect.database.ese.ntds.sd import SecurityDescriptor
-from dissect.database.ese.ntds.util import DN, SearchFlags, encode_value
+from dissect.database.ese.ntds.util import DN, DatabaseFlag, SearchFlag, encode_value
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from dissect.database.ese.index import Index
-    from dissect.database.ese.ntds.objects import Top
+    from dissect.database.ese.ntds.objects import DMD, NTDSDSA, DomainDNS, Server, Top
 
 
 class Database:
@@ -34,7 +34,72 @@ class Database:
         self.link = LinkTable(self)
         self.sd = SecurityDescriptorTable(self)
 
+        self.hiddentable = self.ese.table("hiddentable")
+        self.hiddeninfo = next(self.hiddentable.records(), None)
+
         self.data.schema.load(self)
+
+        # Clear the cache of the data table to avoid caching results before the schema is loaded
+        self.data.get.cache_clear()
+        self.data._make_dn.cache_clear()
+
+    @cached_property
+    def flags(self) -> DatabaseFlag | None:
+        """Return the database flags."""
+        if self.hiddeninfo is None:
+            return None
+
+        result = DatabaseFlag(0)
+        flags = self.hiddeninfo.get("flags_col")
+        for idx, member in enumerate(DatabaseFlag.__members__.values()):
+            if flags[idx] == ord(b"1"):
+                result = member if result is None else result | member
+
+        return result
+
+    @cached_property
+    def pek(self) -> PEK | None:
+        """Return the PEK."""
+        if (domain := self.domain()) is None:
+            # Maybe this is an AD LDS database
+            if (root_pek := self.data.root().get("pekList")) is None:
+                # It's not
+                return None
+
+            # Lookup the schema pek and permutate the boot key
+            # https://www.synacktiv.com/publications/using-ntdissector-to-extract-secrets-from-adam-ntds-files
+            schema_pek = self.dmd().get("pekList")
+            boot_key = bytes(
+                [root_pek[i] for i in [2, 4, 25, 9, 7, 27, 5, 11]]
+                + [schema_pek[i] for i in [37, 2, 17, 36, 20, 11, 22, 7]]
+            )
+
+            # Lookup the actual PEK and unlock it
+            pek = PEK(self.dmd().parent().get("pekList"))
+            pek.unlock(boot_key)
+            return pek
+
+        return domain.pek
+
+    def dsa(self) -> NTDSDSA:
+        """Return the Directory System Agent (DSA) object, a.k.a. the NTDS Settings object."""
+        if not self.hiddeninfo:
+            raise ValueError("No hiddentable information available")
+        return self.data.get(self.hiddeninfo.get("dsa_col"))
+
+    def dmd(self) -> DMD:
+        """Return the Directory Management Domain (DMD) object, a.k.a. the schema container."""
+        if not self.hiddeninfo:
+            raise ValueError("No hiddentable information available")
+        return self.data.get(self.dsa().get("dMDLocation", raw=True))
+
+    def dc(self) -> Server:
+        """Return the Domain Controller (DC) server object that corresponds to this NTDS database."""
+        return self.dsa().parent()
+
+    def domain(self) -> DomainDNS | None:
+        """Return the root domain object in the NTDS database. For AD LDS (ADAM), this will return ``None``."""
+        return self.dsa().domain()
 
 
 class DataTable:
@@ -43,7 +108,6 @@ class DataTable:
     def __init__(self, db: Database):
         self.db = db
         self.table = self.db.ese.table("datatable")
-
         self.schema = Schema()
 
         # Cache frequently used and "expensive" methods
@@ -56,43 +120,6 @@ class DataTable:
             raise ValueError("No root object found")
         return root
 
-    def root_domain(self) -> DomainDNS | None:
-        """Return the root domain object in the NTDS database. For AD LDS, this will return ``None``."""
-        stack = [self.root()]
-        while stack:
-            if (obj := stack.pop()).is_deleted:
-                continue
-
-            if isinstance(obj, DomainDNS) and obj.is_head_of_naming_context:
-                return obj
-
-            stack.extend(obj.children())
-
-        return None
-
-    @cached_property
-    def pek(self) -> PEK | None:
-        """Return the PEK."""
-        if (root_domain := self.root_domain()) is None:
-            # Maybe this is an AD LDS database
-            if (root_pek := self.root().get("pekList")) is None:
-                # It's not
-                return None
-
-            # Lookup the schema pek and permutate the boot key
-            # https://www.synacktiv.com/publications/using-ntdissector-to-extract-secrets-from-adam-ntds-files
-            schema_pek = self.lookup(objectClass="dMD").get("pekList")
-            boot_key = bytes(
-                [root_pek[i] for i in [2, 4, 25, 9, 7, 27, 5, 11]]
-                + [schema_pek[i] for i in [37, 2, 17, 36, 20, 11, 22, 7]]
-            )
-
-            # Lookup the actual PEK and unlock it
-            pek = PEK(self.lookup(objectClass="configuration").get("pekList"))
-            pek.unlock(boot_key)
-            return pek
-        return root_domain.pek
-
     def walk(self) -> Iterator[Object]:
         """Walk through all objects in the NTDS database."""
         stack = [self.root()]
@@ -100,10 +127,17 @@ class DataTable:
             yield (obj := stack.pop())
             stack.extend(obj.children())
 
-    def iter(self) -> Iterator[Object]:
-        """Iterate over all objects in the NTDS database."""
+    def iter(self, raw: bool = False) -> Iterator[Object]:
+        """Iterate over all objects in the NTDS database.
+
+        Args:
+            raw: Whether to return base :class:`Object` instances without upcasting to more specific types
+                 based on the objectClass.
+        """
+        from_record = Object if raw else Object.from_record
+
         for record in self.table.records():
-            yield Object.from_record(self.db, record)
+            yield from_record(self.db, record)
 
     def get(self, dnt: int) -> Object:
         """Retrieve an object by its Directory Number Tag (DNT) value.
@@ -129,7 +163,7 @@ class DataTable:
             raise ValueError(f"Attribute {key!r} is not found in the schema")
 
         index = self.table.find_index(schema.column)
-        record = index.search([encode_value(self.db, key, value)])
+        record = index.search([encode_value(self.db, schema, value)])
         return Object.from_record(self.db, record)
 
     def query(self, query: str, *, optimize: bool = True) -> Iterator[Object]:
@@ -180,8 +214,11 @@ class DataTable:
         cursor.seek([dnt])
 
         record = cursor.record()
-        while record is not None and record != end:
+        while record is not None:
             yield Object.from_record(self.db, record)
+            if record == end:
+                break
+
             record = cursor.next()
 
     def _make_dn(self, dnt: int) -> DN:
@@ -219,9 +256,9 @@ class DataTable:
         if schema.search_flags is None:
             raise ValueError(f"Attribute is not indexed: {attribute!r}")
 
-        if SearchFlags.Indexed in schema.search_flags:
+        if SearchFlag.Indexed in schema.search_flags:
             name = f"INDEX_{schema.id:08x}"
-        elif SearchFlags.TupleIndexed in schema.search_flags:
+        elif SearchFlag.TupleIndexed in schema.search_flags:
             name = f"INDEX_T_{schema.id:08x}"
         else:
             # TODO add ContainerIndexed
