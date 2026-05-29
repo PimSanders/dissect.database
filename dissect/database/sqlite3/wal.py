@@ -114,6 +114,11 @@ class WAL:
 
         return [checkpoints_map[salt] for salt in sorted(checkpoints_map.keys())]
 
+    @cached_property
+    def header_checksum_seed(self) -> tuple[int, int]:
+        """Cached initial checksum seed calculated from the WAL header first 24 bytes."""
+        return calculate_checksum(self.header.dumps()[:24], endian=self.checksum_endian)
+
 
 class Frame:
     def __init__(self, wal: WAL, offset: int):
@@ -165,8 +170,8 @@ class Frame:
             - https://sqlite.org/fileformat2.html#wal_file_format
             - https://github.com/sqlite/sqlite/blob/master/src/wal.c#L995-L1047
         """
-        # Start seed with checksum over first 24 bytes of WAL header
-        seed = calculate_checksum(self.header.dumps()[:24], endian=self.wal.checksum_endian)
+        # Start seed with checksum over first 24 bytes of WAL header (cached on WAL)
+        seed = self.wal.header_checksum_seed
 
         # Iterate frames from the first frame up to and including this frame
         frame_size = len(c_sqlite3.wal_frame) + self.wal.header.page_size
