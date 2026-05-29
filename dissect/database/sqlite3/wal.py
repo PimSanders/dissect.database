@@ -163,7 +163,7 @@ class Frame:
         exactly match the computed checksum over:
 
             1. the first 24 bytes of the WAL header
-            2. the first 8 bytes of each frame header (up to and including this frame)
+            2. the first 16 bytes of each frame header (up to and including this frame)
             3. the page data of each frame (up to and including this frame)
 
         References:
