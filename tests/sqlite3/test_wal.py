@@ -327,7 +327,6 @@ def test_benchmark_wal_checksum_validation(
     big_sqlite_db: Path, big_sqlite_wal: Path, validate: bool, benchmark: BenchmarkFixture
 ) -> None:
     def benchy() -> None:
-        # list(db.tables()[0].rows())
         db = sqlite3.SQLite3(big_sqlite_db, big_sqlite_wal, validate_checksums=validate)
         list(next(iter(db.tables())))
 
