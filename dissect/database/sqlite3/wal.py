@@ -85,7 +85,11 @@ class WAL:
             return self.header_checksum_seed
 
         # Start from the highest verified location we know (saves re-checking earlier frames).
-        base_offset = self._highest_valid_next_offset if self._highest_valid_next_offset <= target_offset else self.first_frame_offset
+        base_offset = (
+            self._highest_valid_next_offset
+            if self._highest_valid_next_offset <= target_offset
+            else self.first_frame_offset
+        )
         seed = self._highest_valid_seed if base_offset == self._highest_valid_next_offset else self.header_checksum_seed
         offset = base_offset
 
