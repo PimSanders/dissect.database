@@ -79,6 +79,10 @@ class WAL:
         If validate=True, verify stored checksums for each frame as we walk; on any mismatch update
         the WAL's highest-known-valid-next-offset and return None. On success (no mismatches) update
         the highest-known-valid-next-offset/seed and return the computed seed.
+
+        References:
+            - https://sqlite.org/fileformat2.html#wal_file_format
+            - https://github.com/sqlite/sqlite/blob/master/src/wal.c#L995-L1047
         """
         # If the target offset is before the first frame, return the initial seed calculated from the WAL header.
         if target_offset < self.first_frame_offset:
