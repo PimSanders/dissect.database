@@ -50,6 +50,10 @@ class WAL:
         self._highest_valid_next_offset: int = self.first_frame_offset
         self._highest_valid_seed: tuple[int, int] = self.header_checksum_seed
 
+        # Save the final highest offset
+        self._final_highest_offset_reached: bool = False
+        self._final_highest_offset: int = None
+
         self.highest_page_num = max(
             fr.page_number for commit in self.commits for fr in commit.frames if fr.is_valid_salt()
         )
@@ -73,7 +77,7 @@ class WAL:
             except EOFError:  # noqa: PERF203
                 break
 
-    def seed_for_offset(self, target_offset: int, validate: bool = False) -> tuple[int, int] | None:
+    def seed_for_offset(self, target_offset: int) -> tuple[int, int] | None:
         """Return checksum seed after processing frames up to and including the frame at target_offset.
 
         If validate=True, verify stored checksums for each frame as we walk; on any mismatch update
@@ -113,22 +117,25 @@ class WAL:
                 raise EOFError("Incomplete page data while calculating checksum")
             seed = calculate_checksum(page_data, seed=seed, endian=self.checksum_endian)
 
-            # If validation requested, compare computed seed to stored checksums in this frame header.
-            if validate:
-                checksum1, checksum2 = struct.unpack(f"{self.checksum_endian}2I", frame_hdr_bytes[-8:])
-                if (seed[0], seed[1]) != (checksum1, checksum2):
-                    # checksum mismatch: highest valid remains at current _highest_valid_next_offset.
-                    # Set highest-known-valid-next-offset to offset (i.e. before this bad frame).
-                    self._highest_valid_next_offset = min(self._highest_valid_next_offset, offset)
-                    return None
+            # Compare computed seed to stored checksums in this frame header.
+            checksum1, checksum2 = struct.unpack(f"{self.checksum_endian}2I", frame_hdr_bytes[-8:])
+            if (seed[0], seed[1]) != (checksum1, checksum2):
+                # checksum mismatch: highest valid remains at current _highest_valid_next_offset.
+                # Set highest-known-valid-next-offset to offset (i.e. before this bad frame).
+                self._highest_valid_next_offset = min(self._highest_valid_next_offset, offset)
+
+                if offset > self._highest_valid_next_offset:
+                    print('yoyo')
+                    self._final_highest_offset_reached = True
+                    self._final_highest_offset = self._highest_valid_next_offset
+
+                return None
 
             offset += self.frame_size
 
-        # Successfully computed (and validated if requested) up to target_offset:
-        if validate:
-            # update highest-known-valid-next-offset/seed to the next offset after target
-            self._highest_valid_next_offset = offset
-            self._highest_valid_seed = seed
+        # update highest-known-valid-next-offset/seed to the next offset after target
+        self._highest_valid_next_offset = offset
+        self._highest_valid_seed = seed
 
         return seed
 
@@ -229,11 +236,11 @@ class Frame:
         Use WAL's highest valid offset to skip checks for already-verified frames.
         """
         # If this frame is before the highest verified-next-offset it's already known-good.
-        if self.offset < self.wal._highest_valid_next_offset:
+        if self.offset < self.wal._highest_valid_next_offset or (self.wal._final_highest_offset_reached and self.offset < self.wal._final_highest_offset):
             return True
 
         # Otherwise compute/validate up to this frame; seed_for_offset(validate=True) will update WAL state.
-        seed = self.wal.seed_for_offset(self.offset, validate=True)
+        seed = self.wal.seed_for_offset(self.offset)
         return seed is not None
 
     @property
