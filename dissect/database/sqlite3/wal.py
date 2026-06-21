@@ -50,6 +50,9 @@ class WAL:
         self._highest_valid_next_offset: int = self.first_frame_offset
         self._highest_valid_seed: tuple[int, int] = self.header_checksum_seed
 
+        # First offset that is known to fail checksum validation, or None.
+        self._checksum_failed_offset: int | None = None
+
         # Save the final highest offset
         self._final_highest_offset_reached: bool = False
         self._final_highest_offset: int = None
@@ -120,14 +123,8 @@ class WAL:
             # Compare computed seed to stored checksums in this frame header.
             checksum1, checksum2 = struct.unpack(f"{self.checksum_endian}2I", frame_hdr_bytes[-8:])
             if (seed[0], seed[1]) != (checksum1, checksum2):
-                # checksum mismatch: highest valid remains at current _highest_valid_next_offset.
-                # Set highest-known-valid-next-offset to offset (i.e. before this bad frame).
                 self._highest_valid_next_offset = min(self._highest_valid_next_offset, offset)
-
-                if offset > self._highest_valid_next_offset:
-                    print('yoyo')
-                    self._final_highest_offset_reached = True
-                    self._final_highest_offset = self._highest_valid_next_offset
+                self._checksum_failed_offset = offset
 
                 return None
 
@@ -235,11 +232,11 @@ class Frame:
 
         Use WAL's highest valid offset to skip checks for already-verified frames.
         """
-        # If this frame is before the highest verified-next-offset it's already known-good.
-        if self.offset < self.wal._highest_valid_next_offset or (self.wal._final_highest_offset_reached and self.offset < self.wal._final_highest_offset):
+        if self.offset < self.wal._highest_valid_next_offset:
             return True
+        if self.wal._checksum_failed_offset is not None and self.offset >= self.wal._checksum_failed_offset:
+            return False
 
-        # Otherwise compute/validate up to this frame; seed_for_offset(validate=True) will update WAL state.
         seed = self.wal.seed_for_offset(self.offset)
         return seed is not None
 
