@@ -79,9 +79,9 @@ class WAL:
     def seed_for_offset(self, offset: int) -> tuple[int, int] | None:
         """Return checksum seed after processing frames up to and including the frame at target_offset.
 
-        If validate=True, verify stored checksums for each frame as we walk. If a mismatch is found, update
-        the WAL's highest-known-valid-next-offset and return None. On success (no mismatches) update
-        the highest-known-valid-next-offset and seed and return the computed seed.
+        Verify stored checksums for each frame as we walk. If a mismatch is found, update the WAL's
+        highest-known-valid-next-offset and return None. On success (no mismatches) update the
+        highest-known-valid-next-offset and seed and return the computed seed.
 
         References:
             - https://sqlite.org/fileformat2.html#wal_file_format
