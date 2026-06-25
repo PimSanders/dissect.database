@@ -76,7 +76,7 @@ class WAL:
             except EOFError:  # noqa: PERF203
                 break
 
-    def seed_for_offset(self, target_offset: int) -> tuple[int, int] | None:
+    def seed_for_offset(self, offset: int) -> tuple[int, int] | None:
         """Return checksum seed after processing frames up to and including the frame at target_offset.
 
         If validate=True, verify stored checksums for each frame as we walk. If a mismatch is found, update
@@ -88,21 +88,21 @@ class WAL:
             - https://github.com/sqlite/sqlite/blob/master/src/wal.c#L995-L1047
         """
         # If the target offset is before the first frame, return the initial seed calculated from the WAL header.
-        if target_offset < self.first_frame_offset:
+        if offset < self.first_frame_offset:
             return self.header_checksum_seed
 
         # Start from the highest verified offset we know (saves re-checking earlier frames).
         base_offset = (
             self._highest_valid_next_offset
-            if self._highest_valid_next_offset <= target_offset
+            if self._highest_valid_next_offset <= offset
             else self.first_frame_offset
         )
         seed = self._highest_valid_seed if base_offset == self._highest_valid_next_offset else self.header_checksum_seed
-        offset = base_offset
+        current_offset = base_offset
 
-        while offset <= target_offset:
+        while current_offset <= offset:
             # Read frame header
-            self.fh.seek(offset)
+            self.fh.seek(current_offset)
             frame_hdr_bytes = self.fh.read(len(c_sqlite3.wal_frame))
             if len(frame_hdr_bytes) < len(c_sqlite3.wal_frame):
                 raise EOFError("Incomplete frame header while calculating checksum")
@@ -119,15 +119,15 @@ class WAL:
             # Compare computed seed to stored checksums in this frame header.
             checksum1, checksum2 = struct.unpack(f"{self.checksum_endian}2I", frame_hdr_bytes[-8:])
             if (seed[0], seed[1]) != (checksum1, checksum2):
-                self._highest_valid_next_offset = min(self._highest_valid_next_offset, offset)
-                self._checksum_failed_offset = offset
+                self._highest_valid_next_offset = min(self._highest_valid_next_offset, current_offset)
+                self._checksum_failed_offset = current_offset
 
                 return None
 
-            offset += self.frame_size
+            current_offset += self.frame_size
 
         # Update highest-known-valid-next-offset and seed to the next offset after target.
-        self._highest_valid_next_offset = offset
+        self._highest_valid_next_offset = current_offset
         self._highest_valid_seed = seed
 
         return seed
