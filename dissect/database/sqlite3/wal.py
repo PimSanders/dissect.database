@@ -115,9 +115,7 @@ class WAL:
             # Compare computed seed to stored checksums in this frame header.
             checksum1, checksum2 = self._checksum_struct.unpack(frame_hdr_bytes[-8:])
             if (seed[0], seed[1]) != (checksum1, checksum2):
-                self._highest_valid_next_offset = min(self._highest_valid_next_offset, current_offset)
                 self._checksum_failed_offset = current_offset
-
                 return None
 
             current_offset += self.frame_size
