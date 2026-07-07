@@ -39,6 +39,7 @@ class WAL:
             raise InvalidDatabase("Invalid WAL header magic")
 
         self.checksum_endian = "<" if self.header.magic == WAL_HEADER_MAGIC_LE else ">"
+        self._checksum_struct = struct.Struct(f"{self.checksum_endian}2I")
 
         self.frame = lru_cache(1024)(self.frame)
         self.frame_size = len(c_sqlite3.wal_frame) + self.header.page_size
@@ -112,7 +113,7 @@ class WAL:
             seed = calculate_checksum(page_data, seed=seed, endian=self.checksum_endian)
 
             # Compare computed seed to stored checksums in this frame header.
-            checksum1, checksum2 = struct.unpack(f"{self.checksum_endian}2I", frame_hdr_bytes[-8:])
+            checksum1, checksum2 = self._checksum_struct.unpack(frame_hdr_bytes[-8:])
             if (seed[0], seed[1]) != (checksum1, checksum2):
                 self._highest_valid_next_offset = min(self._highest_valid_next_offset, current_offset)
                 self._checksum_failed_offset = current_offset
