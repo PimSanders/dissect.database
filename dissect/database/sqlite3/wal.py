@@ -92,6 +92,10 @@ class WAL:
         if offset < self.first_frame_offset:
             return self.header_checksum_seed
 
+        # If the target offset is at or beyond the first known checksum failure, return None.
+        if self._checksum_failed_offset is not None and offset >= self._checksum_failed_offset:
+            return None
+
         # Start from the highest verified offset we know (saves re-checking earlier frames).
         current_offset = self._highest_valid_next_offset
         seed = self._highest_valid_seed
@@ -224,8 +228,6 @@ class Frame:
         """
         if self.offset < self.wal._highest_valid_next_offset:
             return True
-        if self.wal._checksum_failed_offset is not None and self.offset >= self.wal._checksum_failed_offset:
-            return False
 
         seed = self.wal.seed_for_offset(self.offset)
         return seed is not None
