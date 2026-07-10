@@ -84,7 +84,7 @@ class SQLite3:
         wal: WAL | Path | BinaryIO | None = None,
         checkpoint: Checkpoint | int | None = None,
         *,
-        validate_checksums: bool = False,
+        validate_checksums: bool = True,
     ):
         if isinstance(fh, Path):
             path = fh
